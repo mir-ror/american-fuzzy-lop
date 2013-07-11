@@ -53,6 +53,7 @@ static u32 exec_tmout = EXEC_TIMEOUT, /* Configurable exec timeout (ms)   */
            mem_limit = MEM_LIMIT;     /* Memory cap for the child process */
 
 static u8  skip_deterministic,        /* Skip deterministic stages?       */
+           skip_det_input,            /* Skip for input files only?       */
            dumb_mode,                 /* Allow non-instrumented code?     */
            unique_only,               /* Skip non-unique crashes & hangs? */
            kill_signal;               /* Signal that killed the child     */
@@ -82,6 +83,7 @@ static u64 unique_queued,             /* Total number of queued testcases */
            abandoned_inputs,          /* Number of abandoned inputs       */
            total_execs,               /* Total execvp() calls             */
            start_time,                /* Unix start time (ms)             */
+           last_path_time,            /* Time for most recent path (ms)   */
            queue_cycle;               /* Queue round counter              */
 
 static u32 queue_len;                 /* Current length of the queue      */
@@ -113,6 +115,20 @@ static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
 static u8  interesting_8[]  = { INTERESTING_8 };
 static u16 interesting_16[] = { INTERESTING_8, INTERESTING_16 };
 static u32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
+
+
+/* Get unix time in milliseconds */
+
+static u64 get_cur_time(void) {
+
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+
+}
 
 
 /* Generate a random number (from 0 to limit - 1) */
@@ -156,6 +172,8 @@ static void add_to_queue(u8* fname, u32 len) {
   unique_queued++;
 
   if (queue_cycle > 1) queued_later++;
+
+  last_path_time = get_cur_time();
 
 }
 
@@ -295,6 +313,17 @@ static void read_testcases(void) {
   }
 
   if (!unique_queued) FATAL("No usable test cases in '%s'", in_dir);
+
+  if (skip_det_input) {
+
+    struct queue_entry* q = queue;
+
+    while (q) {
+      q->det_done = 1;
+      q = q->next;
+    }
+
+  }
 
 }
 
@@ -620,18 +649,15 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
 
 static void show_stats(void) {
 
-  struct timeval tv;
-  struct timezone tz;
-  s64 run_time;
+  s64 cur_ms, run_time, path_diff;
 
-  u32 run_d, run_h, run_m;
+  u32 run_d, run_h, run_m, path_d, path_h, path_m;
   double run_s;
 
   u32 vbits = (4096 << 3) - count_bits(virgin_bits);
 
-  gettimeofday(&tv, &tz);
-
-  run_time = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000) - start_time;
+  cur_ms   = get_cur_time();
+  run_time = cur_ms - start_time;
 
   if (!run_time) run_time = 1;
 
@@ -639,6 +665,12 @@ static void show_stats(void) {
   run_h = (run_time / 1000 / 60 / 60) % 24;
   run_m = (run_time / 1000 / 60) % 60;
   run_s = ((double)(run_time % 60000)) / 1000;
+
+  path_diff = cur_ms - last_path_time;
+
+  path_d = path_diff / 1000 / 60 / 60 / 24;
+  path_h = (path_diff / 1000 / 60 / 60) % 24;
+  path_m = (path_diff / 1000 / 60) % 60;
 
   if (clear_screen) {
 
@@ -662,6 +694,11 @@ static void show_stats(void) {
        "     Execution paths : " cNOR "%llu+%llu/%llu done "
        "(%0.02f%%)        \n", unique_processed, abandoned_inputs, unique_queued,
        ((double)unique_processed + abandoned_inputs) * 100 / unique_queued);
+
+  SAYF(cGRA
+       "  Last new path seen : " cNOR "%u day%s, %u hr%s, %u min ago"
+       "    \n", 
+       path_d, (path_d == 1) ? "" : "s", path_h, (path_h == 1) ? "" : "s", path_m);
 
   SAYF(cGRA
        "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)            \n",
@@ -1219,6 +1256,7 @@ static void usage(u8* argv0) {
        "Fuzzing behavior settings:\n\n"
 
        "  -d            - skip all deterministic fuzzing stages\n"
+       "  -D            - skip deterministic fuzzing for input files only\n"
        "  -n            - fuzz non-instrumented binaries (dumb mode)\n"
        "  -u            - do not store non-unique samples on disk\n\n"
 
@@ -1294,8 +1332,6 @@ static void handle_resize(int sig) {
 int main(int argc, char** argv) {
 
   s32 opt;
-  struct timeval tv;
-  struct timezone tz;
 
   SAYF(cCYA "afl-fuzz " cBRI VERSION cNOR " (" __DATE__ " " __TIME__ 
        ") by <lcamtuf@google.com>\n");
@@ -1309,7 +1345,7 @@ int main(int argc, char** argv) {
   signal(SIGTSTP, SIG_IGN);
   signal(SIGPIPE, SIG_IGN);
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:dnu")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:dDnu")) > 0)
 
     switch (opt) {
 
@@ -1348,6 +1384,11 @@ int main(int argc, char** argv) {
         skip_deterministic = 1;
         break;
 
+      case 'D':
+
+        skip_det_input = 1;
+        break;
+
       case 'u':
 
         unique_only = 1;
@@ -1367,7 +1408,10 @@ int main(int argc, char** argv) {
   if (optind == argc || !in_dir || !out_dir) usage(argv[0]);
 
   if (dumb_mode && unique_only)
-    FATAL("-u and -d are not compatible with each other");
+    FATAL("-n and -u are not compatible with each other");
+
+  if (skip_deterministic && skip_det_input)
+    FATAL("-d and -D are mutually exclusive");
 
   dev_null = open("/dev/null", O_RDWR);
   if (dev_null < 0) PFATAL("Unable to open /dev/null");
@@ -1375,8 +1419,7 @@ int main(int argc, char** argv) {
   dev_urandom = open("/dev/urandom", O_RDONLY);
   if (dev_urandom < 0) PFATAL("Unable to open /dev/urandom");
 
-  gettimeofday(&tv, &tz);
-  start_time = (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+  start_time = get_cur_time();
 
   setup_shm();
 
