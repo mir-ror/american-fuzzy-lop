@@ -1,0 +1,23 @@
+--- afl-gcc.c.orig	2013-06-20 20:32:39.000000000 +0200
++++ afl-gcc.c	2013-06-22 06:08:11.000000000 +0200
+@@ -127,9 +127,9 @@
+ 
+     }
+ 
+-    if (!strcmp(cur, "-m64")) {
++    if (!strcmp(cur, "-m32")) {
+ 
+-      WARNF("64-bit compilation attempted, overriding");
++      WARNF("32-bit compilation attempted, overriding");
+       continue;
+ 
+     }
+@@ -143,7 +143,7 @@
+   gcc_params[gcc_par_cnt++] = "-B";
+   gcc_params[gcc_par_cnt++] = as_path;
+   gcc_params[gcc_par_cnt++] = "-g";
+-  gcc_params[gcc_par_cnt++] = "-m32";
++  gcc_params[gcc_par_cnt++] = "-m64";
+ 
+   if (getenv("AFL_HARDEN")) {
+ 
