@@ -176,11 +176,15 @@ SIGTERM. The progress screen provides various useful stats, including the
 number of distinctive execution paths discovered, the current queue cycle,
 the number of crashes recorded, and the number of execve() calls per second.
 
+For more info about the displayed data, visit this URL:
+
+  https://code.google.com/p/american-fuzzy-lop/wiki/StatusScreen
+
 There are three subdirectories created within the output directory:
 
   - queue/ - initial test cases for every distinctive execution path. The data
-             may be useful for seeding other fuzzers, for resuming stopped
-             fuzzing processes, or for various manual testing steps.
+             may be useful for seeding other fuzzers, for resuming aborted
+             fuzzing jobs, or for various manual testing steps.
 
   - hangs/ - test cases that cause the tested program to time out. The entries
              are grouped by a 32-bit hash of the execution path.

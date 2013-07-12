@@ -74,6 +74,7 @@ static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    child_timed_out;   /* Traced process timed out?        */
 
 static u64 unique_queued,             /* Total number of queued testcases */
+           initial_queued,            /* Total number of initial inputs   */
            unique_processed,          /* Number of finished queue entries */
            total_crashes,             /* Total number of crashes          */
            unique_crashes,            /* Crashes with unique signatures   */
@@ -327,6 +328,7 @@ static void read_testcases(void) {
   }
 
   last_path_time = 0;
+  initial_queued = unique_queued;
 
 }
 
@@ -769,7 +771,7 @@ static void show_stats(void) {
 
   SAYF(cGRA
        "  Fuzzing efficiency : " cNOR "path = %0.02f, crash = %0.02f, hang = %0.02f ppm"
-       cRST "        \n", ((double)unique_queued) * 1000000 / total_execs,
+       cRST "        \n", ((double)unique_queued - initial_queued) * 1000000 / total_execs,
        ((double)unique_crashes) * 1000000 / total_execs,
        ((double)unique_hangs) * 1000000 / total_execs);
 
