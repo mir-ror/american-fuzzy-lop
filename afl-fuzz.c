@@ -84,6 +84,7 @@ static u64 unique_queued,             /* Total number of queued testcases */
            total_execs,               /* Total execvp() calls             */
            start_time,                /* Unix start time (ms)             */
            last_path_time,            /* Time for most recent path (ms)   */
+           last_crash_time,            /* Time for most recent crash (ms) */
            queue_cycle;               /* Queue round counter              */
 
 static u32 queue_len;                 /* Current length of the queue      */
@@ -324,6 +325,8 @@ static void read_testcases(void) {
     }
 
   }
+
+  last_path_time = 0;
 
 }
 
@@ -583,7 +586,7 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
       if (!dumb_mode) hash = hash32(trace_bits, 4096, 0xa5be5705);
       dir = alloc_printf("%s/hangs/%08x", out_dir, hash);
 
-      if (!mkdir(dir, 0700)) {
+      if (!mkdir(dir, 0700) || dumb_mode) {
 
         unique_hangs++;
 
@@ -611,9 +614,10 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
       dir = alloc_printf("%s/crashes/signal-%02u/%08x", out_dir, kill_signal,
                          hash);
 
-      if (!mkdir(dir, 0700)) {
+      if (!mkdir(dir, 0700) || dumb_mode) {
  
         unique_crashes++;
+        last_crash_time = get_cur_time();
 
       } else if (!unique_only) {
 
@@ -649,9 +653,9 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
 
 static void show_stats(void) {
 
-  s64 cur_ms, run_time, path_diff;
+  s64 cur_ms, run_time;
 
-  u32 run_d, run_h, run_m, path_d, path_h, path_m;
+  u32 run_d, run_h, run_m;
   double run_s;
 
   u32 vbits = (4096 << 3) - count_bits(virgin_bits);
@@ -665,12 +669,6 @@ static void show_stats(void) {
   run_h = (run_time / 1000 / 60 / 60) % 24;
   run_m = (run_time / 1000 / 60) % 60;
   run_s = ((double)(run_time % 60000)) / 1000;
-
-  path_diff = cur_ms - last_path_time;
-
-  path_d = path_diff / 1000 / 60 / 60 / 24;
-  path_h = (path_diff / 1000 / 60 / 60) % 24;
-  path_m = (path_diff / 1000 / 60) % 60;
 
   if (clear_screen) {
 
@@ -691,14 +689,71 @@ static void show_stats(void) {
        run_m, run_s);
 
   SAYF(cGRA
+       "      Problems found : %s%llu " cNOR "crashes (%llu unique), "
+       "%llu hangs (%llu unique)\n",
+       total_crashes ? cLRD : cNOR,
+       total_crashes, unique_crashes, total_hangs, unique_hangs);
+
+
+  if (last_path_time) {
+
+    s64 path_diff;
+    u32 path_d, path_h, path_m;
+    double path_s;
+
+    path_diff = cur_ms - last_path_time;
+
+    path_d = path_diff / 1000 / 60 / 60 / 24;
+    path_h = (path_diff / 1000 / 60 / 60) % 24;
+    path_m = (path_diff / 1000 / 60) % 60;
+
+    path_s = ((double)(path_diff % 60000)) / 1000;
+
+    SAYF(cGRA
+         "       Last new path : " cNOR "%u day%s, %u hr%s, %u min, %0.02f sec"
+         " ago    \n", 
+         path_d, (path_d == 1) ? "" : "s", path_h, (path_h == 1) ? "" : "s",
+         path_m, path_s);
+
+  } else {
+
+    SAYF(cGRA
+         "       Last new path : " cNOR "none seen yet\n");
+
+  }
+
+  if (last_crash_time) {
+
+    s64 crash_diff;
+    u32 crash_d, crash_h, crash_m;
+    double crash_s;
+
+    crash_diff = cur_ms - last_crash_time;
+
+    crash_d = crash_diff / 1000 / 60 / 60 / 24;
+    crash_h = (crash_diff / 1000 / 60 / 60) % 24;
+    crash_m = (crash_diff / 1000 / 60) % 60;
+
+    crash_s = ((double)(crash_diff % 60000)) / 1000;
+
+    SAYF(cGRA
+         "   Last unique crash : " cNOR "%u day%s, %u hr%s, %u min, %0.02f sec"
+         " ago    \n", 
+         crash_d, (crash_d == 1) ? "" : "s", crash_h, (crash_h == 1) ? "" : "s",
+         crash_m, crash_s);
+
+  } else {
+
+    SAYF(cGRA
+         "   Last unique crash : " cNOR "none seen yet\n");
+
+  }
+
+  SAYF(cCYA "\nIn-depth stats:\n\n" cGRA
        "     Execution paths : " cNOR "%llu+%llu/%llu done "
        "(%0.02f%%)        \n", unique_processed, abandoned_inputs, unique_queued,
        ((double)unique_processed + abandoned_inputs) * 100 / unique_queued);
 
-  SAYF(cGRA
-       "  Last new path seen : " cNOR "%u day%s, %u hr%s, %u min ago"
-       "    \n", 
-       path_d, (path_d == 1) ? "" : "s", path_h, (path_h == 1) ? "" : "s", path_m);
 
   SAYF(cGRA
        "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)            \n",
@@ -709,38 +764,32 @@ static void show_stats(void) {
        total_execs, ((double)total_execs) * 1000 / run_time);
 
   SAYF(cGRA
-       "      Problems found : %s%llu " cNOR "crashes (%llu unique), "
-       "%llu hangs (%llu unique)\n",
-       total_crashes ? cLRD : cNOR,
-       total_crashes, unique_crashes, total_hangs, unique_hangs);
-
-  SAYF(cGRA
        "      Bitmap density : " cNOR "%u tuples seen (%0.02f%%)\n",
        vbits, ((double)vbits) * 100 / (4096 << 3));
 
   SAYF(cGRA
-       "  Fuzzing efficiency : " cNOR "paths = %0.02f ppm, faults = %0.02f ppm"
-       cRST "        \n\n", ((double)unique_queued) * 1000000 / total_execs,
-       ((double)unique_crashes + unique_hangs) * 1000000 / total_execs);
+       "  Fuzzing efficiency : " cNOR "path = %0.02f, crash = %0.02f, hang = %0.02f ppm"
+       cRST "        \n", ((double)unique_queued) * 1000000 / total_execs,
+       ((double)unique_crashes) * 1000000 / total_execs,
+       ((double)unique_hangs) * 1000000 / total_execs);
 
-  SAYF(cCYA "Per-stage yields:\n\n"
-       cGRA
-       "     Bit-level flips : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
+  SAYF(cGRA "\n"
+       "     Bit flip yields : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
         stage_finds[0], stage_cycles[0], stage_finds[1], stage_cycles[1],
         stage_finds[2], stage_cycles[2]);
 
   SAYF(cGRA
-       "    Byte-level flips : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
+       "    Byte flip yields : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
         stage_finds[3], stage_cycles[3], stage_finds[4], stage_cycles[4],
         stage_finds[5], stage_cycles[5]);
 
   SAYF(cGRA
-       "    Interesting ints : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
+       "    Known int yields : " cNOR "%llu/%llu, %llu/%llu, %llu/%llu\n",
         stage_finds[6], stage_cycles[6], stage_finds[7], stage_cycles[7],
         stage_finds[8], stage_cycles[8]);
 
   SAYF(cGRA
-       "       Random tweaks : " cNOR "%llu/%llu (%llu latent paths)" cRST "\n\n",
+       "  Havoc stage yields : " cNOR "%llu/%llu (%llu latent paths)" cRST "\n\n",
         stage_finds[9], stage_cycles[9], queued_later);
 
   fflush(stdout);
