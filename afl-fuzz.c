@@ -709,8 +709,9 @@ static void show_stats(void) {
        total_execs, ((double)total_execs) * 1000 / run_time);
 
   SAYF(cGRA
-       "      Problems found : " cNOR "%llu crashes (%llu unique), "
+       "      Problems found : %s%llu " cNOR "crashes (%llu unique), "
        "%llu hangs (%llu unique)\n",
+       total_crashes ? cLRD : cNOR,
        total_crashes, unique_crashes, total_hangs, unique_hangs);
 
   SAYF(cGRA
@@ -720,7 +721,7 @@ static void show_stats(void) {
   SAYF(cGRA
        "  Fuzzing efficiency : " cNOR "paths = %0.02f ppm, faults = %0.02f ppm"
        cRST "        \n\n", ((double)unique_queued) * 1000000 / total_execs,
-       ((double)total_crashes + total_hangs) * 1000000 / total_execs);
+       ((double)unique_crashes + unique_hangs) * 1000000 / total_execs);
 
   SAYF(cCYA "Per-stage yields:\n\n"
        cGRA
