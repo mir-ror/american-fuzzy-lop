@@ -74,6 +74,7 @@ static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    child_timed_out;   /* Traced process timed out?        */
 
 static u64 unique_queued,             /* Total number of queued testcases */
+           variable_queued,           /* Testcases with variable behavior */
            initial_queued,            /* Total number of initial inputs   */
            unique_processed,          /* Number of finished queue entries */
            total_crashes,             /* Total number of crashes          */
@@ -104,6 +105,7 @@ struct queue_entry {
   u8* fname;                          /* File name for the test case      */
   u32 len;                            /* Input length                     */
   u8  det_done;                       /* Deterministic stage done?        */
+  u8  init_done;                      /* Init done?                       */
   struct queue_entry* next;           /* Next element, if any             */
 };
 
@@ -289,6 +291,7 @@ static void read_testcases(void) {
 
   DIR* d = opendir(in_dir);
   struct dirent* de;
+  struct queue_entry* q;
 
   if (!d) PFATAL("Unable to open '%s'", in_dir);
 
@@ -318,7 +321,7 @@ static void read_testcases(void) {
 
   if (skip_det_input) {
 
-    struct queue_entry* q = queue;
+    q = queue;
 
     while (q) {
       q->det_done = 1;
@@ -326,6 +329,13 @@ static void read_testcases(void) {
     }
 
   }
+
+  q = queue;
+
+  while (q) {
+    q->init_done = 1;
+    q = q->next;
+  } 
 
   last_path_time = 0;
   initial_queued = unique_queued;
@@ -431,13 +441,11 @@ static u8 run_target(char** argv) {
 static void perform_dry_run(char** argv) {
 
   struct queue_entry* q = queue;
-  u32 processed = 0;
 
   while (q) {
 
-    u8  fault;
-    u32 i;
-    u32 cksum;
+    u8  fault, warned = 0;
+    u32 i, cksum, cal_cycles = CAL_CYCLES;
 
     ACTF("Verifying test case '%s'...", q->fname);
 
@@ -477,17 +485,11 @@ static void perform_dry_run(char** argv) {
 
     }
 
-    cksum = hash32(trace_bits, 4096, 0xa5b35705);
-
-    /* For the first 10 samples, wait long enough for any time(0)-based
-       randomness to change. */
-
-    if (processed < 10)
-      for (i = 0; (i < 15) && !stop_soon; i++) usleep(100000);
-
     if (stop_soon) return;
 
-    for (i = 0; i < CAL_CYCLES; i++) {
+    cksum = hash32(trace_bits, 4096, 0xa5b35705);
+
+    for (i = 0; i < cal_cycles; i++) {
 
       u32 new_cksum;
 
@@ -495,8 +497,6 @@ static void perform_dry_run(char** argv) {
       fault = run_target(argv);
 
       if (stop_soon) return;
-
-      new_cksum = hash32(trace_bits, 4096, 0xa5b35705);
 
       switch (fault) {
 
@@ -510,19 +510,21 @@ static void perform_dry_run(char** argv) {
 
       }
 
-#ifdef PEDANTIC_INPUT
+      new_cksum = hash32(trace_bits, 4096, 0xa5b35705);
 
-      if (cksum != new_cksum)
-        FATAL("Inconsistent instrumentation output for test case '%s'",
-              q->fname);
+      if (cksum != new_cksum) {
 
-#else
+        if (!warned) {
+          WARNF("Instrumentation output varies across runs.");
+          warned = 1;
+          variable_queued++;
+          cal_cycles = CAL_CYCLES_LONG;
+        }
 
-      /* Just record the new bits, if any, and move on... */
+        has_new_bits();
 
-      has_new_bits();
+      }
 
-#endif /* ^PEDANTIC INPUT */
 
     }
 
@@ -532,7 +534,6 @@ static void perform_dry_run(char** argv) {
          count_bits(trace_bits), count_bits(virgin_bits));
 
     q = q->next;
-    processed++;
 
   }
 
@@ -615,7 +616,6 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
       break;
 
     case FAULT_CRASH:
-
 
       dir = alloc_printf("%s/crashes/signal-%02u", out_dir, kill_signal);
       mkdir(dir, 0700); /* Ignore errors */
@@ -762,8 +762,9 @@ static void show_stats(void) {
 
   SAYF(cCYA "\nIn-depth stats:\n\n" cGRA
        "     Execution paths : " cNOR "%llu+%llu/%llu done "
-       "(%0.02f%%)        \n", unique_processed, abandoned_inputs, unique_queued,
-       ((double)unique_processed + abandoned_inputs) * 100 / unique_queued);
+       "(%0.02f%%), %llu variable        \n", unique_processed, abandoned_inputs,
+       unique_queued, ((double)unique_processed + abandoned_inputs) * 100 /
+       unique_queued, variable_queued);
 
 
   SAYF(cGRA
@@ -867,6 +868,62 @@ static void fuzz_one(char** argv) {
   memcpy(out_buf, in_buf, len);
 
   subseq_hangs = 0;
+
+  /***************
+   * CALIBRATION *
+   ***************/
+
+  if (!queue_cur->init_done) {
+
+    u32 cksum, new_cksum;
+    u8  var_detected = 0;
+
+    stage_name = "calibration";
+    stage_max  = CAL_CYCLES;
+
+    write_to_testcase(out_buf, len);
+    run_target(argv);
+    cksum = hash32(trace_bits, 4096, 0xa5b35705);
+
+    for (stage_cur = 1; stage_cur < stage_max; stage_cur++) {
+
+      write_to_testcase(out_buf, len);
+      run_target(argv);
+      if (stop_soon) goto abandon_entry;
+
+      new_cksum = hash32(trace_bits, 4096, 0xa5b35705);
+
+      if (cksum != new_cksum) {
+
+        has_new_bits();
+
+        if (!var_detected) {
+
+          u8* new_fn;
+
+          variable_queued++;
+          var_detected = 1;
+
+          new_fn = alloc_printf("%s-variable", queue_cur->fname);
+         
+          if (rename(queue_cur->fname, new_fn))
+            PFATAL("Unable to rename '%s'", queue_cur->fname);
+
+          ck_free(queue_cur->fname);
+          queue_cur->fname = new_fn;
+      
+          
+        }
+
+      }
+
+      show_stats();
+
+    }
+
+    queue_cur->init_done = 1;
+
+  }
 
   if (skip_deterministic || queue_cur->det_done) goto havoc_stage;
 
@@ -1490,7 +1547,12 @@ int main(int argc, char** argv) {
 
   perform_dry_run(argv + optind);
 
-  if (!out_file && !stop_soon) setup_stdio_file();
+  if (!stop_soon) {
+
+    usleep(500000);
+    if (!out_file) setup_stdio_file();
+
+  }
 
   SAYF(TERM_CLEAR);
 

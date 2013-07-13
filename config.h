@@ -43,13 +43,12 @@
 
 #define MEM_LIMIT           100
 
-/* Number of calibration cycles per every initial test case: */
+/* Number of calibration cycles per every new test case: */
 
-#define CAL_CYCLES          4
+#define CAL_CYCLES          10
+#define CAL_CYCLES_LONG     100
 
 /* Uncomment to be pedantic about instrumentation output for input files: */
-
-// #define PEDANTIC_INPUT
 
 /* Distinctive exit code used to indicate failed execution: */
 

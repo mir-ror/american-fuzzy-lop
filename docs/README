@@ -186,6 +186,9 @@ There are three subdirectories created within the output directory:
              may be useful for seeding other fuzzers, for resuming aborted
              fuzzing jobs, or for various manual testing steps.
 
+             Any test cases that inherently result in variable execution paths
+             will have "-variable" appended to their filenames.
+
   - hangs/ - test cases that cause the tested program to time out. The entries
              are grouped by a 32-bit hash of the execution path.
 
