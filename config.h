@@ -47,6 +47,10 @@
 
 #define CAL_CYCLES          4
 
+/* Uncomment to be pedantic about instrumentation output for input files: */
+
+// #define PEDANTIC_INPUT
+
 /* Distinctive exit code used to indicate failed execution: */
 
 #define EXEC_FAIL           0x55

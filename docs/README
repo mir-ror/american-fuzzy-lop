@@ -108,7 +108,7 @@ useful), or to use the right LD_LIBRARY_PATH.
 
 Setting AFL_HARDEN in the environment will cause afl-gcc to automatically enable
 several GCC hardening feeatures that may make it easier to detect memory bugs;
-with GCC 4.8 and above, this includes ASAN.
+with GCC 4.8 and above, this includes ASAN / MSAN.
 
 Running 'prelink' against the target binary may offer performance benefits and
 has no adverse effects on the instrumentation.

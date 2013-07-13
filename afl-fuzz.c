@@ -494,7 +494,6 @@ static void perform_dry_run(char** argv) {
       if (!out_file) lseek(out_fd, 0, SEEK_SET);
       fault = run_target(argv);
 
-
       if (stop_soon) return;
 
       new_cksum = hash32(trace_bits, 4096, 0xa5b35705);
@@ -511,9 +510,19 @@ static void perform_dry_run(char** argv) {
 
       }
 
+#ifdef PEDANTIC_INPUT
+
       if (cksum != new_cksum)
         FATAL("Inconsistent instrumentation output for test case '%s'",
               q->fname);
+
+#else
+
+      /* Just record the new bits, if any, and move on... */
+
+      has_new_bits();
+
+#endif /* ^PEDANTIC INPUT */
 
     }
 

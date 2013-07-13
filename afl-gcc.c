@@ -105,7 +105,7 @@ static void edit_params(u32 argc, char** argv) {
   u8 fortify_set = 0;
   u8 *name;
 
-  gcc_params = ck_alloc((argc + 8) * sizeof(u8*));
+  gcc_params = ck_alloc((argc + 9) * sizeof(u8*));
 
   name = strrchr(argv[0], '/');
   if (!name) name = argv[0]; else name++;
@@ -151,6 +151,7 @@ static void edit_params(u32 argc, char** argv) {
 
 #ifdef USE_ASAN
     gcc_params[gcc_par_cnt++] = "-fsanitize=address";
+    gcc_params[gcc_par_cnt++] = "-fsanitize=memory";
 #endif /* USE_ASAN */
 
     if (!fortify_set)
