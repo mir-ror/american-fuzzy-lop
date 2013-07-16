@@ -43,12 +43,11 @@
 
 #define MEM_LIMIT           100
 
-/* Number of calibration cycles per every new test case: */
+/* Number of calibration cycles per every new test case, and for cases
+   where variable execution paths are detected: */
 
 #define CAL_CYCLES          10
 #define CAL_CYCLES_LONG     100
-
-/* Uncomment to be pedantic about instrumentation output for input files: */
 
 /* Distinctive exit code used to indicate failed execution: */
 
@@ -62,16 +61,22 @@
 
 #define HAVOC_CYCLES        5000
 
+/* Maximum multiplier for the above while new findings are being made
+   (should be a power of two, and beware of 32-bit int overflows): */
+
+#define HAVOC_MAX_MULT      16
+
 /* Max havoc stacking (the average is half of this amount): */
 
 #define HAVOC_STACKING      10
 
-/* Caps on block size for cloning and deletion operation: */
+/* Caps on block size for cloning and deletion operation - absolute
+   and in proportion to the size of the file: */
 
 #define HAVOC_MAX_BLOCK     100
 #define HAVOC_MAX_PERCENT   75
 
-/* Interval between reseeding PRNG (values returned): */
+/* Call count interval between reseeding the libc PRNG from /dev/urandom: */
 
 #define RESEED_RNG          10000
 

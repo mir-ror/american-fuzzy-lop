@@ -846,6 +846,7 @@ static void fuzz_one(char** argv) {
   s32 len, fd, temp_len;
   u8  *in_buf, *out_buf;
   s32 i, j;
+  u64 havoc_queued;
 
   u64 orig_hit_cnt, new_hit_cnt;
 
@@ -1176,6 +1177,8 @@ havoc_stage:
   temp_len = len;
 
   orig_hit_cnt = unique_queued + unique_hangs + unique_crashes;
+
+  havoc_queued = unique_queued;
  
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
 
@@ -1317,6 +1320,17 @@ havoc_stage:
     if (temp_len < len) out_buf = ck_realloc(out_buf, len);
     temp_len = len;
     memcpy(out_buf, in_buf, len);
+
+    /* Run for a bit longer when new finds are being made. */
+
+    if (unique_queued != havoc_queued) {
+
+      if (stage_max / HAVOC_MAX_MULT < HAVOC_CYCLES)
+        stage_max *= 2;
+
+      havoc_queued = unique_queued;
+
+    }
 
   }
 
