@@ -66,15 +66,25 @@
 
 #define HAVOC_MAX_MULT      16
 
-/* Max havoc stacking (the average is half of this amount): */
+/* Maximum stacking for havoc-stage tweaks is calculated like this: 
 
-#define HAVOC_STACKING      10
+   n = random between 0 and HAVOC_STACK_POW2-1
+   stacking = 2^n
+
+   In other words, the default value produces 1, 2, 4, 8, 16, 32, or 64
+   stacked tweaks: */
+
+#define HAVOC_STACK_POW2    7
 
 /* Caps on block size for cloning and deletion operation - absolute
    and in proportion to the size of the file: */
 
 #define HAVOC_MAX_BLOCK     100
 #define HAVOC_MAX_PERCENT   75
+
+/* Maximum value for integer addition / subtraction stages: */
+
+#define ARITH_MAX           32
 
 /* Call count interval between reseeding the libc PRNG from /dev/urandom: */
 

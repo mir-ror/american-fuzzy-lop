@@ -59,28 +59,28 @@ static inline void show_tuples(void) {
   for (i = 0; i < 4096; i++) {
 
     if (*current & 1)
-      SAYF("%03u-%03u/0\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/0\n", (i >> 6), i & 63);
 
     if (*current & 2)
-      SAYF("%03u-%03u/1\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/1\n", (i >> 6), i & 63);
 
     if (*current & 4)
-      SAYF("%03u-%03u/2\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/2\n", (i >> 6), i & 63);
 
     if (*current & 8)
-      SAYF("%03u-%03u/3\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/3\n", (i >> 6), i & 63);
 
     if (*current & 16)
-      SAYF("%03u-%03u/4\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/4\n", (i >> 6), i & 63);
 
     if (*current & 32)
-      SAYF("%03u-%03u/5\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/5\n", (i >> 6), i & 63);
 
     if (*current & 64)
-      SAYF("%03u-%03u/6\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/6\n", (i >> 6), i & 63);
 
     if (*current & 128)
-      SAYF("%03u-%03u/7\n", i & 63, (i >> 6));
+      SAYF("%03u-%03u/7\n", (i >> 6), i & 63);
 
     current++;
 

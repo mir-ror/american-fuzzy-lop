@@ -35,6 +35,12 @@ typedef int64_t  s64;
 #  define MAX(_a,_b) ((_a) > (_b) ? (_a) : (_b))
 #endif /* !MIN */
 
+#define SWAP16(_x) (((_x) << 8) | ((_x) >> 8))
+
+#define SWAP32(_x) (((_x) << 24) | ((_x) >> 24) | \
+                    (((_x) << 8) & 0x00FF0000) | \
+                    (((_x) >> 8) & 0x0000FF00))
+
 #define R(x) (random() % (x))
 
 #endif /* ! _HAVE_TYPES_H */
