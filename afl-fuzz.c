@@ -99,7 +99,7 @@ static u64 stage_finds[13],           /* Patterns found per fuzz stage    */
 
 static u32 rand_cnt;                  /* Random number counter            */
 
-static u64 total_cal_time,            /* Total calibration time (ms)      */
+static u64 total_cal_us,              /* Total calibration time (us)      */
            total_cal_cycles;          /* Total calibration cycles         */
 
 static u64 total_bitmap_size,         /* Total bitmap size (calibration)  */
@@ -112,7 +112,7 @@ struct queue_entry {
   u32 len;                            /* Input length                     */
   u8  det_done;                       /* Deterministic stage done?        */
   u8  init_done;                      /* Init done?                       */
-  u32 exec_time;                      /* Execution time (ms)              */
+  u64 exec_us;                        /* Execution time (us)              */
   u32 bitmap_size;                    /* Bitmap size                      */
   u64 handicap;                       /* Number of queue cycles behind    */
   struct queue_entry* next;           /* Next element, if any             */
@@ -158,6 +158,19 @@ static u64 get_cur_time(void) {
   gettimeofday(&tv, &tz);
 
   return (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+
+}
+
+/* Get unix time in microseconds */
+
+static u64 get_cur_time_us(void) {
+
+  struct timeval tv;
+  struct timezone tz;
+
+  gettimeofday(&tv, &tz);
+
+  return (tv.tv_sec * 1000000LL) + tv.tv_usec;
 
 }
 
@@ -476,7 +489,7 @@ static void perform_dry_run(char** argv) {
     u8  fault, warned = 0;
     u32 i, cksum, cal_cycles = CAL_CYCLES;
     u8  new_bits = 0;
-    u64 start_time, stop_time;
+    u64 start_us, stop_us;
 
     ACTF("Verifying test case '%s'...", q->fname);
 
@@ -492,7 +505,7 @@ static void perform_dry_run(char** argv) {
 
     }
 
-    start_time = get_cur_time();
+    start_us = get_cur_time_us();
 
     fault = run_target(argv);
     if (stop_soon) return;
@@ -522,7 +535,7 @@ static void perform_dry_run(char** argv) {
 
     cksum = hash32(trace_bits, 4096, 0xa5b35705);
 
-    for (i = 0; i < cal_cycles; i++) {
+    for (i = 1; i < cal_cycles; i++) {
 
       u32 new_cksum;
 
@@ -560,18 +573,19 @@ static void perform_dry_run(char** argv) {
 
     }
 
-    stop_time = get_cur_time();
+    stop_us = get_cur_time_us();
 
-    total_cal_time   += stop_time - start_time;
+    total_cal_us     += stop_us - start_us;
     total_cal_cycles += cal_cycles;
 
-    q->exec_time   = (stop_time - start_time) / cal_cycles;
+    q->exec_us = (stop_us - start_us) / cal_cycles;
+
     q->bitmap_size = count_bits(trace_bits);
     q->handicap    = 0;
     q->init_done   = 1;
 
-    total_bitmap_size     += q->bitmap_size;
-    total_bitmap_entries  += 1;
+    total_bitmap_size += q->bitmap_size;
+    total_bitmap_entries++;
 
     if (!out_file) close(out_fd);
 
@@ -907,7 +921,7 @@ static void fuzz_one(char** argv) {
   u8  *in_buf, *out_buf;
   s32 i, j;
   u64 havoc_queued;
-  u32 avg_exec_time, avg_bitmap_size;
+  u32 avg_exec_us, avg_bitmap_size;
   u64 orig_hit_cnt, new_hit_cnt;
 
   /* Read the test case into memory, remove file if appropriate. */
@@ -937,7 +951,7 @@ static void fuzz_one(char** argv) {
 
   if (!queue_cur->init_done) {
 
-    u64 start_time, stop_time;
+    u64 start_us, stop_us;
 
     u32 cksum, new_cksum;
     u8  var_detected = 0;
@@ -945,7 +959,7 @@ static void fuzz_one(char** argv) {
     stage_name = "calibration";
     stage_max  = CAL_CYCLES;
 
-    start_time = get_cur_time();
+    start_us = get_cur_time_us();
 
     write_to_testcase(out_buf, len);
     run_target(argv);
@@ -987,18 +1001,18 @@ static void fuzz_one(char** argv) {
 
     }
 
-    stop_time = get_cur_time();
+    stop_us = get_cur_time_us();
 
-    total_cal_time   += stop_time - start_time;
+    total_cal_us     += stop_us - start_us;
     total_cal_cycles += stage_max;
 
-    queue_cur->exec_time   = (stop_time - start_time) / stage_max;
+    queue_cur->exec_us     = (stop_us - start_us) / stage_max;
     queue_cur->bitmap_size = count_bits(trace_bits);
     queue_cur->handicap    = queue_cycle;
     queue_cur->init_done   = 1;
 
-    total_bitmap_size     += queue_cur->bitmap_size;
-    total_bitmap_entries  += 1;
+    total_bitmap_size += queue_cur->bitmap_size;
+    total_bitmap_entries++;
 
   }
 
@@ -1008,23 +1022,23 @@ static void fuzz_one(char** argv) {
 
   /* Classify execution speed */
 
-  avg_exec_time = total_cal_time / total_cal_cycles;
+  avg_exec_us = total_cal_us / total_cal_cycles;
 
-  if (queue_cur->exec_time * 0.1 > avg_exec_time) perf_score = 10;
-  else if (queue_cur->exec_time * 0.25 > avg_exec_time) perf_score = 25;
-  else if (queue_cur->exec_time * 0.5 > avg_exec_time) perf_score = 50;
-  else if (queue_cur->exec_time * 0.75 > avg_exec_time) perf_score = 75;
-  else if (queue_cur->exec_time * 3 < avg_exec_time) perf_score = 300;
-  else if (queue_cur->exec_time * 2 < avg_exec_time) perf_score = 200;
-  else if (queue_cur->exec_time * 1.5 < avg_exec_time) perf_score = 150;
+  if (queue_cur->exec_us * 0.1 > avg_exec_us) perf_score = 10;
+  else if (queue_cur->exec_us * 0.25 > avg_exec_us) perf_score = 25;
+  else if (queue_cur->exec_us * 0.5 > avg_exec_us) perf_score = 50;
+  else if (queue_cur->exec_us * 0.75 > avg_exec_us) perf_score = 75;
+  else if (queue_cur->exec_us * 4 < avg_exec_us) perf_score = 300;
+  else if (queue_cur->exec_us * 3 < avg_exec_us) perf_score = 200;
+  else if (queue_cur->exec_us * 2 < avg_exec_us) perf_score = 150;
 
   /* Classify bitmap size */
 
   avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
 
-  if (queue_cur->bitmap_size * 0.7 > avg_bitmap_size) perf_score *= 3;
-  else if (queue_cur->bitmap_size * 0.8 > avg_bitmap_size) perf_score *= 2;
-  else if (queue_cur->bitmap_size * 0.9 > avg_bitmap_size) perf_score *= 1.5;
+  if (queue_cur->bitmap_size * 0.3 > avg_bitmap_size) perf_score *= 3;
+  else if (queue_cur->bitmap_size * 0.5 > avg_bitmap_size) perf_score *= 2;
+  else if (queue_cur->bitmap_size * 0.75 > avg_bitmap_size) perf_score *= 1.5;
   else if (queue_cur->bitmap_size * 1.5 < avg_bitmap_size) perf_score *= 0.75;
   else if (queue_cur->bitmap_size * 2 < avg_bitmap_size) perf_score *= 0.5;
   else if (queue_cur->bitmap_size * 3 < avg_bitmap_size) perf_score *= 0.25;
@@ -1846,7 +1860,7 @@ static void usage(u8* argv0) {
        "Fuzzing behavior settings:\n\n"
 
        "  -d            - skip all deterministic fuzzing stages\n"
-       "  -D            - skip deterministic fuzzing for input files only\n"
+       "  -D            - skip deterministic fuzzing for starting files\n"
        "  -n            - fuzz non-instrumented binaries (dumb mode)\n"
        "  -u            - do not store non-unique samples on disk\n\n"
 
