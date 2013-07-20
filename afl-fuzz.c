@@ -86,10 +86,9 @@ static u64 unique_queued,             /* Total number of queued testcases */
            total_execs,               /* Total execvp() calls             */
            start_time,                /* Unix start time (ms)             */
            last_path_time,            /* Time for most recent path (ms)   */
-           last_crash_time,            /* Time for most recent crash (ms) */
+           last_crash_time,           /* Time for most recent crash (ms) */
            queue_cycle;               /* Queue round counter              */
 
-static u32 queue_len;                 /* Current length of the queue      */
 static u32 subseq_hangs;              /* Number of hangs in a row         */
 
 static u8* stage_name;                /* Name of the current fuzz stage   */
@@ -100,12 +99,22 @@ static u64 stage_finds[13],           /* Patterns found per fuzz stage    */
 
 static u32 rand_cnt;                  /* Random number counter            */
 
+static u64 total_cal_time,            /* Total calibration time (ms)      */
+           total_cal_cycles;          /* Total calibration cycles         */
+
+static u64 total_bitmap_size,         /* Total bitmap size (calibration)  */
+           total_bitmap_entries;      /* Total bitmap entries             */
+
+static u32 perf_score;                /* Perf score for queue entry       */
 
 struct queue_entry {
   u8* fname;                          /* File name for the test case      */
   u32 len;                            /* Input length                     */
   u8  det_done;                       /* Deterministic stage done?        */
   u8  init_done;                      /* Init done?                       */
+  u32 exec_time;                      /* Execution time (ms)              */
+  u32 bitmap_size;                    /* Bitmap size                      */
+  u64 handicap;                       /* Number of queue cycles behind    */
   struct queue_entry* next;           /* Next element, if any             */
 };
 
@@ -137,6 +146,7 @@ enum {
   STAGE_INTEREST32,
   STAGE_HAVOC
 };
+
 
 /* Get unix time in milliseconds */
 
@@ -189,7 +199,6 @@ static void add_to_queue(u8* fname, u32 len) {
 
   } else queue = queue_top = q;
 
-  queue_len++;
   unique_queued++;
 
   if (queue_cycle > 1) queued_later++;
@@ -467,6 +476,7 @@ static void perform_dry_run(char** argv) {
     u8  fault, warned = 0;
     u32 i, cksum, cal_cycles = CAL_CYCLES;
     u8  new_bits = 0;
+    u64 start_time, stop_time;
 
     ACTF("Verifying test case '%s'...", q->fname);
 
@@ -481,6 +491,8 @@ static void perform_dry_run(char** argv) {
       if (link(q->fname, out_file)) PFATAL("link() failed");
 
     }
+
+    start_time = get_cur_time();
 
     fault = run_target(argv);
     if (stop_soon) return;
@@ -548,6 +560,19 @@ static void perform_dry_run(char** argv) {
 
     }
 
+    stop_time = get_cur_time();
+
+    total_cal_time   += stop_time - start_time;
+    total_cal_cycles += cal_cycles;
+
+    q->exec_time   = (stop_time - start_time) / cal_cycles;
+    q->bitmap_size = count_bits(trace_bits);
+    q->handicap    = 0;
+    q->init_done   = 1;
+
+    total_bitmap_size     += q->bitmap_size;
+    total_bitmap_entries  += 1;
+
     if (!out_file) close(out_fd);
 
     if (!dumb_mode && !new_bits) {
@@ -613,7 +638,8 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
     case FAULT_NONE:
 
       if (!has_new_bits()) return;
-      fn = alloc_printf("%s/queue/%llu", out_dir, unique_queued);
+      fn = alloc_printf("%s/queue/%06llu-%06llu", out_dir, unique_queued,
+                        unique_processed);
       add_to_queue(fn, len);
       break;
 
@@ -634,7 +660,7 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
 
       }
 
-      fn = alloc_printf("%s/%llu", dir, total_hangs);
+      fn = alloc_printf("%s/%06llu-%06llu", dir, total_hangs, unique_processed);
       ck_free(dir);
       total_hangs++;
       break;
@@ -662,7 +688,8 @@ static void save_if_interesting(void* mem, u32 len, u8 fault) {
 
       }
 
-      fn = alloc_printf("%s/%llu", dir, total_crashes);
+      fn = alloc_printf("%s/%06llu-%06llu", dir, total_crashes,
+                        unique_processed);
       ck_free(dir);
       total_crashes++;
       break;
@@ -792,7 +819,7 @@ static void show_stats(void) {
 
 
   SAYF(cGRA
-       "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)              \n",
+       "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)           \n",
        stage_name, stage_cur, stage_max, ((double)stage_cur) * 100 / stage_max);
 
   SAYF(cGRA
@@ -880,7 +907,7 @@ static void fuzz_one(char** argv) {
   u8  *in_buf, *out_buf;
   s32 i, j;
   u64 havoc_queued;
-
+  u32 avg_exec_time, avg_bitmap_size;
   u64 orig_hit_cnt, new_hit_cnt;
 
   /* Read the test case into memory, remove file if appropriate. */
@@ -902,6 +929,7 @@ static void fuzz_one(char** argv) {
   memcpy(out_buf, in_buf, len);
 
   subseq_hangs = 0;
+  perf_score   = 100;
 
   /***************
    * CALIBRATION *
@@ -909,11 +937,15 @@ static void fuzz_one(char** argv) {
 
   if (!queue_cur->init_done) {
 
+    u64 start_time, stop_time;
+
     u32 cksum, new_cksum;
     u8  var_detected = 0;
 
     stage_name = "calibration";
     stage_max  = CAL_CYCLES;
+
+    start_time = get_cur_time();
 
     write_to_testcase(out_buf, len);
     run_target(argv);
@@ -955,8 +987,56 @@ static void fuzz_one(char** argv) {
 
     }
 
-    queue_cur->init_done = 1;
+    stop_time = get_cur_time();
 
+    total_cal_time   += stop_time - start_time;
+    total_cal_cycles += stage_max;
+
+    queue_cur->exec_time   = (stop_time - start_time) / stage_max;
+    queue_cur->bitmap_size = count_bits(trace_bits);
+    queue_cur->handicap    = queue_cycle;
+    queue_cur->init_done   = 1;
+
+    total_bitmap_size     += queue_cur->bitmap_size;
+    total_bitmap_entries  += 1;
+
+  }
+
+  /*********************
+   * PERFORMANCE SCORE *
+   *********************/
+
+  /* Classify execution speed */
+
+  avg_exec_time = total_cal_time / total_cal_cycles;
+
+  if (queue_cur->exec_time * 0.1 > avg_exec_time) perf_score = 10;
+  else if (queue_cur->exec_time * 0.25 > avg_exec_time) perf_score = 25;
+  else if (queue_cur->exec_time * 0.5 > avg_exec_time) perf_score = 50;
+  else if (queue_cur->exec_time * 0.75 > avg_exec_time) perf_score = 75;
+  else if (queue_cur->exec_time * 3 < avg_exec_time) perf_score = 300;
+  else if (queue_cur->exec_time * 2 < avg_exec_time) perf_score = 200;
+  else if (queue_cur->exec_time * 1.5 < avg_exec_time) perf_score = 150;
+
+  /* Classify bitmap size */
+
+  avg_bitmap_size = total_bitmap_size / total_bitmap_entries;
+
+  if (queue_cur->bitmap_size * 0.7 > avg_bitmap_size) perf_score *= 3;
+  else if (queue_cur->bitmap_size * 0.8 > avg_bitmap_size) perf_score *= 2;
+  else if (queue_cur->bitmap_size * 0.9 > avg_bitmap_size) perf_score *= 1.5;
+  else if (queue_cur->bitmap_size * 1.5 < avg_bitmap_size) perf_score *= 0.75;
+  else if (queue_cur->bitmap_size * 2 < avg_bitmap_size) perf_score *= 0.5;
+  else if (queue_cur->bitmap_size * 3 < avg_bitmap_size) perf_score *= 0.25;
+
+  /* Adjust score based on handicap */
+
+  if (queue_cur->handicap >= 4) {
+    perf_score *= 4;
+    queue_cur->handicap -= 3;
+  } else if (queue_cur->handicap) {
+    perf_score *= 2;
+    queue_cur->handicap--;
   }
 
   if (skip_deterministic || queue_cur->det_done) goto havoc_stage;
@@ -1107,13 +1187,13 @@ skip_bitflip:
 
   stage_name = "arith 8/8";
   stage_cur  = 0;
-  stage_max  = 2 * len * (ARITH_MAX - 1);
+  stage_max  = 2 * len * ARITH_MAX;
 
   orig_hit_cnt = new_hit_cnt;
 
   for (i = 0; i < len; i++) {
 
-    for (j = 1; j < ARITH_MAX; j++) {
+    for (j = 1; j <= ARITH_MAX; j++) {
 
       out_buf[i] += j;
 
@@ -1140,15 +1220,15 @@ skip_bitflip:
 
   stage_name = "arith 16/8";
   stage_cur  = 0;
-  stage_max  = 4 * (len - 1) * (ARITH_MAX - 1);
+  stage_max  = 4 * (len - 1) * ARITH_MAX;
 
   orig_hit_cnt = new_hit_cnt;
 
   for (i = 0; i < len - 1; i++) {
 
-    for (j = 1; j < ARITH_MAX; j++) {
+    u16 orig = *(u16*)(out_buf + i);
 
-      u16 orig = *(u16*)(out_buf + i);
+    for (j = 1; j <= ARITH_MAX; j++) {
 
       if ((orig & 0xff) + j > 0xff) {
 
@@ -1201,15 +1281,15 @@ skip_bitflip:
 
   stage_name = "arith 32/8";
   stage_cur  = 0;
-  stage_max  = 4 * (len - 3) * (ARITH_MAX - 1);
+  stage_max  = 4 * (len - 3) * ARITH_MAX;
 
   orig_hit_cnt = new_hit_cnt;
 
   for (i = 0; i < len - 3; i++) {
 
-    for (j = 1; j < ARITH_MAX; j++) {
+    u32 orig = *(u32*)(out_buf + i);
 
-      u32 orig = *(u32*)(out_buf + i);
+    for (j = 1; j <= ARITH_MAX; j++) {
 
       if ((orig & 0xffff) + j > 0xffff) {
 
@@ -1229,7 +1309,7 @@ skip_bitflip:
 
       } else stage_max--;
 
-      if ((orig >> 16) + j > 0xffff) {
+      if ((SWAP32(orig) & 0xffff) + j > 0xffff) {
 
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) + j);
 
@@ -1238,7 +1318,7 @@ skip_bitflip:
 
       } else stage_max--;
 
-      if ((orig >> 16) < j) {
+      if ((SWAP32(orig) & 0xffff) < j) {
 
         *(u32*)(out_buf + i) = SWAP32(SWAP32(orig) - j);
 
@@ -1395,7 +1475,8 @@ havoc_stage:
   queue_cur->det_done = 1;
 
   stage_name = "havoc";
-  stage_max = HAVOC_CYCLES;
+  stage_max  = HAVOC_CYCLES * perf_score / 100;
+
   temp_len = len;
 
   orig_hit_cnt = unique_queued + unique_crashes;
@@ -1469,14 +1550,14 @@ havoc_stage:
 
           /* Randomly subtract from byte */
 
-          out_buf[UR(temp_len)] -= UR(ARITH_MAX);
+          out_buf[UR(temp_len)] -= 1 + UR(ARITH_MAX);
           break;
 
         case 5:
 
           /* Randomly add to byte */
 
-          out_buf[UR(temp_len)] += UR(ARITH_MAX);
+          out_buf[UR(temp_len)] += 1 + UR(ARITH_MAX);
           break;
 
         case 6:
@@ -1489,12 +1570,12 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 1);
 
-            *(u16*)(out_buf + pos) -= UR(ARITH_MAX);
+            *(u16*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 1);
-            u16 num = UR(ARITH_MAX);
+            u16 num = 1 + UR(ARITH_MAX);
 
             *(u16*)(out_buf + pos) =
               SWAP16(SWAP16(*(u16*)(out_buf + pos)) - num);
@@ -1513,12 +1594,12 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 1);
 
-            *(u16*)(out_buf + pos) += UR(ARITH_MAX);
+            *(u16*)(out_buf + pos) += 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 1);
-            u16 num = UR(ARITH_MAX);
+            u16 num = 1 + UR(ARITH_MAX);
 
             *(u16*)(out_buf + pos) =
               SWAP16(SWAP16(*(u16*)(out_buf + pos)) + num);
@@ -1537,12 +1618,12 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 3);
 
-            *(u32*)(out_buf + pos) -= UR(ARITH_MAX);
+            *(u32*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 3);
-            u32 num = UR(ARITH_MAX);
+            u32 num = 1 + UR(ARITH_MAX);
 
             *(u32*)(out_buf + pos) =
               SWAP32(SWAP32(*(u32*)(out_buf + pos)) - num);
@@ -1561,12 +1642,12 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 3);
 
-            *(u32*)(out_buf + pos) += UR(ARITH_MAX);
+            *(u32*)(out_buf + pos) += 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 3);
-            u32 num = UR(ARITH_MAX);
+            u32 num = 1 + UR(ARITH_MAX);
 
             *(u32*)(out_buf + pos) =
               SWAP32(SWAP32(*(u32*)(out_buf + pos)) + num);
@@ -1701,7 +1782,7 @@ havoc_stage:
 
     if (unique_queued != havoc_queued) {
 
-      if (stage_max / HAVOC_MAX_MULT < HAVOC_CYCLES)
+      if (stage_max / HAVOC_MAX_MULT < HAVOC_CYCLES * perf_score / 100)
         stage_max *= 2;
 
       havoc_queued = unique_queued;

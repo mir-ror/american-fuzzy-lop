@@ -84,7 +84,7 @@
 
 /* Maximum value for integer addition / subtraction stages: */
 
-#define ARITH_MAX           32
+#define ARITH_MAX           24
 
 /* Call count interval between reseeding the libc PRNG from /dev/urandom: */
 
