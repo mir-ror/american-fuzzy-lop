@@ -334,6 +334,10 @@ static void read_testcases(void) {
 
   if (!d) PFATAL("Unable to open '%s'", in_dir);
 
+  /* TODO: readdir() order is essentially random on some modern systems,
+     which can make life difficult. We should either sort entries or
+     write 'testcases.map' in the output directory. */
+
   while ((de = readdir(d))) {
 
     struct stat st;
@@ -756,6 +760,22 @@ static void show_stats(void) {
   SAYF(TERM_HOME cCYA 
        "afl-fuzz " cBRI VERSION cYEL "\n--------------\n\n"
 
+#ifdef IGNORE_FINDS
+
+       cLRD "*** IGNORE_FINDS MODE ENABLED ***\n"
+#ifdef COVERAGE_ONLY
+       cPIN "*** COVERAGE_ONLY MODE ENABLED ***\n"
+#endif /* COVERAGE_ONLY */
+       "\n"
+
+#else
+
+#ifdef COVERAGE_ONLY
+       cPIN "*** COVERAGE_ONLY MODE ENABLED ***\n\n"
+#endif /* COVERAGE_ONLY */
+
+#endif /* IGNORE_FINDS */
+
        cCYA "Queue cycle: " cBRI "%llu\n\n"
 
        cGRA 
@@ -923,6 +943,12 @@ static void fuzz_one(char** argv) {
   u64 havoc_queued;
   u32 avg_exec_us, avg_bitmap_size;
   u64 orig_hit_cnt, new_hit_cnt;
+
+#ifdef IGNORE_FINDS
+
+  if (!queue_cur->init_done) return;
+
+#endif /* IGNORE_FINDS */
 
   /* Read the test case into memory, remove file if appropriate. */
 

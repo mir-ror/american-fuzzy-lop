@@ -77,7 +77,10 @@ The instrumentation is used as a part of a simple queue-based algorithm:
 
 In real-world testing with libraries such as libjpeg, libpng, libtiff, or
 giflib, the fuzzer requires no fine-tuning, and significantly outperforms
-coverage-only tools.
+blind fuzzing or coverage-only tools. Using a common set of strategies against
+libjpeg, the tool toggles twice as many branches as non-instrumented fuzzing
+(IGNORE_FINDS in config.h) and identifies around 40% more distinctive test cases
+than coverage-based algorithms (COVERAGE_ONLY in config.h).
 
 3) Instrumenting programs for use with AFL
 ------------------------------------------

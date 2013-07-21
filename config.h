@@ -94,9 +94,16 @@
 
 #define SHM_ENV_VAR         "__AFL_SHM_ID"
 
-/* Uncomment this to use inferior coverage-based instrumentation. */
+/* Uncomment this to use inferior coverage-based instrumentation. Note that
+   you need to recompile the target binary for this to have any effect! */
 
 // #define COVERAGE_ONLY
+
+/* Uncomment this to use instrumentation data, but ignore newly discovered
+   paths. This is useful for comparing the coverage attainable using the
+   standard algorithm with that possible with dumb fuzzing. */
+
+// #define IGNORE_FINDS
 
 /* List of interesting values to use in fuzzing. */
 
