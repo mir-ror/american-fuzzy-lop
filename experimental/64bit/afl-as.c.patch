@@ -6,7 +6,7 @@
  
 -  if (!strcmp(as_params[1], "--64"))
 -    FATAL("64-bit compilation not supported yet (use gcc -m32)");
-+  if (strcmp(as_params[1], "--64"))
++  if (strcmp(as_params[1], "--32"))
 +    FATAL("32-bit compilation not supported");
  
    input_file = as_params[argc - 1];

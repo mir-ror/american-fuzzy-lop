@@ -14,7 +14,7 @@
 #
 
 PROGNAME    = afl
-VERSION     = 0.20b
+VERSION     = 0.22b
 
 BIN_PATH    = /usr/local/bin
 HELPER_PATH = /usr/local/lib/afl

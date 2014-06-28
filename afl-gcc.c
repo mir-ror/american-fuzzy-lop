@@ -134,6 +134,8 @@ static void edit_params(u32 argc, char** argv) {
 
     }
 
+    if (!strcmp(cur, "-pipe")) continue;
+
     if (strstr(cur, "FORTIFY_SOURCE")) fortify_set = 1;
 
     gcc_params[gcc_par_cnt++] = cur;

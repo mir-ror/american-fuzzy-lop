@@ -1085,7 +1085,11 @@ static void fuzz_one(char** argv) {
    * SIMPLE BITFLIP *
    ******************/
 
-#define FLIP_BIT(_ar, _b) do { _ar[(_b) >> 3] ^= (1 << ((_b) & 7)); } while (0)
+#define FLIP_BIT(_ar, _b) do { \
+    u8* _arf = (u8*)(_ar); \
+    u32 _bf = (_b); \
+    _arf[(_bf) >> 3] ^= (128 >> ((_bf) & 7)); \
+  } while (0)
 
   stage_name = "bitflip 1/1";
   stage_max  = len << 3;

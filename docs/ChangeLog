@@ -1,4 +1,12 @@
 --------------
+Version 0.22b:
+--------------
+
+  - More proper handling of long bitflips and some swaps.
+
+  - Fix for the handling of gcc -pipe.
+
+--------------
 Version 0.21b:
 --------------
 
