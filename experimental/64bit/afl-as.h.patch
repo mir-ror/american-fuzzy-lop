@@ -1,5 +1,5 @@
---- afl-as.h.orig	2013-06-21 14:23:39.000000000 -0700
-+++ afl-as.h	2013-08-27 13:12:53.597939852 -0700
+--- afl-as.h.orig	2014-06-29 08:52:52.000000000 +0200
++++ afl-as.h	2014-06-29 08:59:28.000000000 +0200
 @@ -40,12 +40,12 @@
    "/* --- AFL TRAMPOLINE --- */\n"
    "\n"
@@ -18,7 +18,7 @@
  
  static const u8* main_payload = 
  
-@@ -58,12 +58,12 @@
+@@ -58,34 +58,34 @@
    "__afl_maybe_log:\n"
    "\n"
    "  lahf\n"
@@ -34,26 +34,29 @@
    "  je __afl_setup\n"
    "\n"
    "__afl_store:\n"
-@@ -73,19 +73,19 @@
-   "  pushw %cx\n"
    "\n"
+   "  /* Calculate and store hit for the code location specified in ecx. */\n"
+   "\n"
+-  "  rorl $8, %ecx\n"
++  "  rorq $8, %rcx\n"
+   "\n"
+ #ifndef COVERAGE_ONLY
+-  "  xorw __afl_prev_loc, %cx\n"
+-  "  xorw %cx, __afl_prev_loc\n"
++  "  xorw __afl_prev_loc@GOTPCREL, %cx\n"
++  "  xorw %cx, __afl_prev_loc@GOTPCREL\n"
+ #endif /* !COVERAGE_ONLY */
+   "  addw %cx, %ax\n"
+   "\n"
+-  "  roll $8, %ecx\n"
++  "  rolq $8, %rcx\n"
  #ifdef COVERAGE_ONLY
--  "  shrl $8, %ecx\n"
-+  "  shrq $8, %rcx\n"
+-  "  orb  %cl, (%eax)\n"
++  "  orb  %cl, (%rax)\n"
  #else
--  "  movb __afl_prev_loc, %cl\n"
--  "  movb %ch, __afl_prev_loc\n"
-+  "  movb __afl_prev_loc@GOTPCREL, %cl\n"
-+  "  movb %ch, __afl_prev_loc@GOTPCREL\n"
-   "  shlb $2, %cl\n"
-   "  shrw $2, %cx\n"
+-  "  xorb %cl, (%eax)\n"
++  "  xorb %cl, (%rax)\n"
  #endif /* ^COVERAGE_ONLY */
--  "  addl %ecx, %eax\n"
-+  "  addq %rcx, %rax\n"
-   "\n"
-   "  popw %cx\n"
--  "  orb %cl, (%eax)\n"
-+  "  orb %cl, (%rax)\n"
    "\n"
 -  "  movb __afl_saved_flags, %ah\n"
 +  "  movb __afl_saved_flags@GOTPCREL, %ah\n"
@@ -152,4 +155,4 @@
 +  "  .comm   __afl_area_ptr, 8, 32\n"
    "  .comm   __afl_setup_failure, 1, 32\n"
  #ifndef COVERAGE_ONLY
-   "  .comm   __afl_prev_loc, 1, 32\n"
+   "  .comm   __afl_prev_loc, 2, 32\n"

@@ -70,20 +70,20 @@ static const u8* main_payload =
   "\n"
   "  /* Calculate and store hit for the code location specified in ecx. */\n"
   "\n"
-  "  pushw %cx\n"
+  "  rorl $8, %ecx\n"
   "\n"
+#ifndef COVERAGE_ONLY
+  "  xorw __afl_prev_loc, %cx\n"
+  "  xorw %cx, __afl_prev_loc\n"
+#endif /* !COVERAGE_ONLY */
+  "  addw %cx, %ax\n"
+  "\n"
+  "  roll $8, %ecx\n"
 #ifdef COVERAGE_ONLY
-  "  shrl $8, %ecx\n"
+  "  orb  %cl, (%eax)\n"
 #else
-  "  movb __afl_prev_loc, %cl\n"
-  "  movb %ch, __afl_prev_loc\n"
-  "  shlb $2, %cl\n"
-  "  shrw $2, %cx\n"
+  "  xorb %cl, (%eax)\n"
 #endif /* ^COVERAGE_ONLY */
-  "  addl %ecx, %eax\n"
-  "\n"
-  "  popw %cx\n"
-  "  orb %cl, (%eax)\n"
   "\n"
   "  movb __afl_saved_flags, %ah\n"
   "  sahf\n"
@@ -156,7 +156,7 @@ static const u8* main_payload =
   "  .comm   __afl_area_ptr, 4, 32\n"
   "  .comm   __afl_setup_failure, 1, 32\n"
 #ifndef COVERAGE_ONLY
-  "  .comm   __afl_prev_loc, 1, 32\n"
+  "  .comm   __afl_prev_loc, 2, 32\n"
 #endif /* !COVERAGE_ONLY */
   "  .comm   __afl_saved_flags, 1, 32\n"
   "\n"

@@ -209,7 +209,9 @@ static void add_to_queue(u8* fname, u32 len) {
 
   q->fname = fname;
   q->len   = len;
-  q->depth = max_depth = cur_depth + 1;
+  q->depth = cur_depth + 1;
+
+  if (q->depth > max_depth) max_depth = q->depth;
 
   if (queue_top) {
 
@@ -855,9 +857,10 @@ static void show_stats(void) {
 
   SAYF(cCYA "\nIn-depth stats:\n\n" cGRA
        "     Execution paths : " cNOR "%llu+%llu/%llu done "
-       "(%0.02f%%), %llu variable, %llu levels" cEOL "\n", unique_processed,
+       "(%0.02f%%), %llu variable, %llu level%s" cEOL "\n", unique_processed,
        abandoned_inputs, unique_queued, ((double)unique_processed +
-       abandoned_inputs) * 100 / unique_queued, variable_queued, max_depth);
+       abandoned_inputs) * 100 / unique_queued, variable_queued, max_depth,
+       max_depth > 1 ? "s" : "");
 
 
   SAYF(cGRA

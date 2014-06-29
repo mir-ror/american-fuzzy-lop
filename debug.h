@@ -60,6 +60,7 @@
 
 #define TERM_HOME     "\x1b[H"
 #define TERM_CLEAR    TERM_HOME "\x1b[2J"
+#define cEOL          "\x1b[0K"
 
 #define ERRORF(x...)  fprintf(stderr, x)
 #define SAYF(x...)    printf(x)
