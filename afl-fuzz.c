@@ -81,12 +81,14 @@ static u64 unique_queued,             /* Total number of queued testcases */
            unique_crashes,            /* Crashes with unique signatures   */
            total_hangs,               /* Total number of hangs            */
            unique_hangs,              /* Hangs with unique signatures     */
+           cur_depth,                 /* Current path depth               */
+           max_depth,                 /* Max path depth                   */
            queued_later,              /* Items queued after 1st cycle     */
            abandoned_inputs,          /* Number of abandoned inputs       */
            total_execs,               /* Total execvp() calls             */
            start_time,                /* Unix start time (ms)             */
            last_path_time,            /* Time for most recent path (ms)   */
-           last_crash_time,           /* Time for most recent crash (ms) */
+           last_crash_time,           /* Time for most recent crash (ms)  */
            queue_cycle;               /* Queue round counter              */
 
 static u32 subseq_hangs;              /* Number of hangs in a row         */
@@ -112,9 +114,11 @@ struct queue_entry {
   u32 len;                            /* Input length                     */
   u8  det_done;                       /* Deterministic stage done?        */
   u8  init_done;                      /* Init done?                       */
+  u8  var_detected;                   /* Variable behavior?               */
   u64 exec_us;                        /* Execution time (us)              */
   u32 bitmap_size;                    /* Bitmap size                      */
   u64 handicap;                       /* Number of queue cycles behind    */
+  u64 depth;                          /* Path depth                       */
   struct queue_entry* next;           /* Next element, if any             */
 };
 
@@ -161,6 +165,7 @@ static u64 get_cur_time(void) {
 
 }
 
+
 /* Get unix time in microseconds */
 
 static u64 get_cur_time_us(void) {
@@ -204,6 +209,7 @@ static void add_to_queue(u8* fname, u32 len) {
 
   q->fname = fname;
   q->len   = len;
+  q->depth = max_depth = cur_depth + 1;
 
   if (queue_top) {
 
@@ -490,7 +496,7 @@ static void perform_dry_run(char** argv) {
 
   while (q) {
 
-    u8  fault, warned = 0;
+    u8  fault;
     u32 i, cksum, cal_cycles = CAL_CYCLES;
     u8  new_bits = 0;
     u64 start_us, stop_us;
@@ -564,11 +570,13 @@ static void perform_dry_run(char** argv) {
 
       if (cksum != new_cksum) {
 
-        if (!warned) {
+        if (!q->var_detected) {
+
           WARNF("Instrumentation output varies across runs.");
-          warned = 1;
+          q->var_detected = 1;
           variable_queued++;
           cal_cycles = CAL_CYCLES_LONG;
+
         }
 
         if (has_new_bits()) new_bits = 1;
@@ -780,13 +788,13 @@ static void show_stats(void) {
 
        cGRA 
        "    Overall run time : " cNOR "%u day%s, %u hr%s, %u min, %0.02f sec"
-       "    \n", queue_cycle,
+       cEOL "\n", queue_cycle,
        run_d, (run_d == 1) ? "" : "s", run_h, (run_h == 1) ? "" : "s",
        run_m, run_s);
 
   SAYF(cGRA
        "      Problems found : %s%llu " cNOR "crashes (%llu unique), "
-       "%llu hangs (%llu unique)\n",
+       "%llu hangs (%llu unique)" cEOL "\n",
        total_crashes ? cLRD : cNOR,
        total_crashes, unique_crashes, total_hangs, unique_hangs);
 
@@ -807,7 +815,7 @@ static void show_stats(void) {
 
     SAYF(cGRA
          "       Last new path : " cNOR "%u day%s, %u hr%s, %u min, %0.02f sec"
-         " ago    \n", 
+         " ago" cEOL "\n", 
          path_d, (path_d == 1) ? "" : "s", path_h, (path_h == 1) ? "" : "s",
          path_m, path_s);
 
@@ -834,7 +842,7 @@ static void show_stats(void) {
 
     SAYF(cGRA
          "   Last unique crash : " cNOR "%u day%s, %u hr%s, %u min, %0.02f sec"
-         " ago    \n", 
+         " ago" cEOL "\n", 
          crash_d, (crash_d == 1) ? "" : "s", crash_h, (crash_h == 1) ? "" : "s",
          crash_m, crash_s);
 
@@ -847,17 +855,17 @@ static void show_stats(void) {
 
   SAYF(cCYA "\nIn-depth stats:\n\n" cGRA
        "     Execution paths : " cNOR "%llu+%llu/%llu done "
-       "(%0.02f%%), %llu variable        \n", unique_processed, abandoned_inputs,
-       unique_queued, ((double)unique_processed + abandoned_inputs) * 100 /
-       unique_queued, variable_queued);
+       "(%0.02f%%), %llu variable, %llu levels" cEOL "\n", unique_processed,
+       abandoned_inputs, unique_queued, ((double)unique_processed +
+       abandoned_inputs) * 100 / unique_queued, variable_queued, max_depth);
 
 
   SAYF(cGRA
-       "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)           \n",
+       "       Current stage : " cNOR "%s, %u/%u done (%0.02f%%)" cEOL "\n",
        stage_name, stage_cur, stage_max, ((double)stage_cur) * 100 / stage_max);
 
   SAYF(cGRA
-       "    Execution cycles : " cNOR "%llu (%0.02f per second)    \n",
+       "    Execution cycles : " cNOR "%llu (%0.02f per second)" cEOL "\n",
        total_execs, ((double)total_execs) * 1000 / run_time);
 
   SAYF(cGRA
@@ -866,7 +874,7 @@ static void show_stats(void) {
 
   SAYF(cGRA
        "  Fuzzing efficiency : " cNOR "path = %0.02f, crash = %0.02f, hang = %0.02f ppm"
-       cRST "        \n", ((double)unique_queued - initial_queued) * 1000000 / total_execs,
+       cRST cEOL "\n", ((double)unique_queued - initial_queued) * 1000000 / total_execs,
        ((double)unique_crashes) * 1000000 / total_execs,
        ((double)unique_hangs) * 1000000 / total_execs);
 
@@ -923,6 +931,8 @@ static u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   } else subseq_hangs = 0;
 
+  /* This handles FAULT_ERROR for us: */
+
   save_if_interesting(out_buf, len, fault);
 
   if (!(stage_cur % 100) || stage_cur + 1 == stage_max) show_stats();
@@ -971,6 +981,8 @@ static void fuzz_one(char** argv) {
   subseq_hangs = 0;
   perf_score   = 100;
 
+  cur_depth = queue_cur->depth;
+
   /***************
    * CALIBRATION *
    ***************/
@@ -980,7 +992,7 @@ static void fuzz_one(char** argv) {
     u64 start_us, stop_us;
 
     u32 cksum, new_cksum;
-    u8  var_detected = 0;
+    u8  fault;
 
     stage_name = "calibration";
     stage_max  = CAL_CYCLES;
@@ -988,14 +1000,28 @@ static void fuzz_one(char** argv) {
     start_us = get_cur_time_us();
 
     write_to_testcase(out_buf, len);
-    run_target(argv);
+
+    fault = run_target(argv);
+
+    /* We don't want to fuzz anything that seems to be crashing
+       or timing out intermittently... */
+
+    if (fault == FAULT_ERROR)
+      FATAL("Unable to execute target application");
+
+    if (fault != FAULT_NONE) goto abandon_entry;
+
     cksum = hash32(trace_bits, 4096, 0xa5b35705);
 
     for (stage_cur = 1; stage_cur < stage_max; stage_cur++) {
 
       write_to_testcase(out_buf, len);
-      run_target(argv);
-      if (stop_soon) goto abandon_entry;
+      fault = run_target(argv);
+
+      if (fault == FAULT_ERROR)
+        FATAL("Unable to execute target application");
+
+      if (stop_soon || fault != FAULT_NONE) goto abandon_entry;
 
       new_cksum = hash32(trace_bits, 4096, 0xa5b35705);
 
@@ -1003,12 +1029,11 @@ static void fuzz_one(char** argv) {
 
         has_new_bits();
 
-        if (!var_detected) {
+        if (!queue_cur->var_detected) {
 
           u8* new_fn;
 
           variable_queued++;
-          var_detected = 1;
 
           new_fn = alloc_printf("%s-variable", queue_cur->fname);
          
@@ -1016,7 +1041,9 @@ static void fuzz_one(char** argv) {
             PFATAL("Unable to rename '%s'", queue_cur->fname);
 
           ck_free(queue_cur->fname);
+
           queue_cur->fname = new_fn;
+          queue_cur->var_detected = 1;
       
           
         }
@@ -1069,11 +1096,13 @@ static void fuzz_one(char** argv) {
   else if (queue_cur->bitmap_size * 2 < avg_bitmap_size) perf_score *= 0.5;
   else if (queue_cur->bitmap_size * 3 < avg_bitmap_size) perf_score *= 0.25;
 
-  /* Adjust score based on handicap */
+  /* Adjust score based on handicap. Handicap is proportional to how late
+     in the game we learned about this path. Latecomers get some extra air
+     time. */
 
   if (queue_cur->handicap >= 4) {
     perf_score *= 4;
-    queue_cur->handicap -= 3;
+    queue_cur->handicap -= 4;
   } else if (queue_cur->handicap) {
     perf_score *= 2;
     queue_cur->handicap--;
