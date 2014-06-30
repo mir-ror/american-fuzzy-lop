@@ -18,7 +18,7 @@
  
  static const u8* main_payload = 
  
-@@ -58,34 +58,34 @@
+@@ -58,35 +58,35 @@
    "__afl_maybe_log:\n"
    "\n"
    "  lahf\n"
@@ -43,8 +43,10 @@
  #ifndef COVERAGE_ONLY
 -  "  xorw __afl_prev_loc, %cx\n"
 -  "  xorw %cx, __afl_prev_loc\n"
+-  "  xorw $4095, __afl_prev_loc\n"
 +  "  xorw __afl_prev_loc@GOTPCREL, %cx\n"
 +  "  xorw %cx, __afl_prev_loc@GOTPCREL\n"
++  "  xorw $4095, __afl_prev_loc@GOTPCREL\n"
  #endif /* !COVERAGE_ONLY */
    "  addw %cx, %ax\n"
    "\n"
@@ -63,7 +65,7 @@
    "  sahf\n"
    "  ret\n"
    "\n"
-@@ -95,12 +95,12 @@
+@@ -96,12 +96,12 @@
    "\n"
    "  /* Do not retry setup if we had previous failures. */\n"
    "\n"
@@ -78,7 +80,7 @@
    "  sahf\n"
    "  ret\n"
    "\n"
-@@ -108,36 +108,37 @@
+@@ -109,36 +109,37 @@
    "\n"
    "  /* Map SHM, jumping to __afl_setup_abort if something goes wrong. */\n"
    "\n"
@@ -135,7 +137,7 @@
    "\n"
    "  jmp __afl_store\n"
    "\n"
-@@ -146,14 +147,16 @@
+@@ -147,14 +148,16 @@
    "  /* Record setup failure so that we don't keep calling\n"
    "     shmget() / shmat() over and over again. */\n"
    "\n"

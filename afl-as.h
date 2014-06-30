@@ -75,6 +75,7 @@ static const u8* main_payload =
 #ifndef COVERAGE_ONLY
   "  xorw __afl_prev_loc, %cx\n"
   "  xorw %cx, __afl_prev_loc\n"
+  "  xorw $4095, __afl_prev_loc\n"
 #endif /* !COVERAGE_ONLY */
   "  addw %cx, %ax\n"
   "\n"
